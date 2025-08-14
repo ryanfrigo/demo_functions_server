@@ -16,8 +16,12 @@ async def get_random_number_get(
     digits: int = Query(6, ge=1, le=30),
     format: str = Query("text", pattern="^(text|json)$"),
 ):
-    value = secrets.randbelow(10 ** digits)
-    number_str = f"{value:0{digits}d}"
+    # Ensure the first digit is never 0 by sampling from
+    # [10^(digits-1), 10^digits - 1]
+    start = 10 ** (digits - 1)
+    range_size = 9 * start
+    value = secrets.randbelow(range_size) + start
+    number_str = str(value)
     if format == "json":
         return {"ok": True, "digits": digits, "number": number_str}
     return Response(content=number_str, media_type="text/plain")
@@ -29,8 +33,12 @@ async def get_random_number_post(payload: RandomNumberRequest | None = None, for
         if format == "json":
             return {"ok": False, "error": "digits must be between 1 and 30"}
         return Response(content="digits must be between 1 and 30", status_code=400, media_type="text/plain")
-    value = secrets.randbelow(10 ** digits)
-    number_str = f"{value:0{digits}d}"
+    # Ensure the first digit is never 0 by sampling from
+    # [10^(digits-1), 10^digits - 1]
+    start = 10 ** (digits - 1)
+    range_size = 9 * start
+    value = secrets.randbelow(range_size) + start
+    number_str = str(value)
     if format == "json":
         return {"ok": True, "digits": digits, "number": number_str}
     return Response(content=number_str, media_type="text/plain")
