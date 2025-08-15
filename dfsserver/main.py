@@ -55,10 +55,21 @@ class VerifyIdentityRequest(BaseModel):
 class VerifyIdentityResponse(BaseModel):
     status: str
 
+def _unwrap(payload: dict) -> dict:
+    """Accept bodies shaped as {..}, {args:{..}}, or {body:{..}} (and tolerate extra keys)."""
+    if not isinstance(payload, dict):
+        return {}
+    if isinstance(payload.get("args"), dict):
+        return payload.get("args")
+    if isinstance(payload.get("body"), dict):
+        return payload.get("body")
+    return payload
+
+
 @app.post("/functions/verify-identity")
 async def verify_identity(payload: dict) -> VerifyIdentityResponse:
     # Be tolerant to different wrappers used by various tool runners
-    args = payload.get("args") or payload.get("body") or payload
+    args = _unwrap(payload)
     method = args.get("method") if isinstance(args, dict) else None
     factors = args.get("factors") if isinstance(args, dict) else None
     if isinstance(factors, str):
@@ -99,7 +110,11 @@ class LookupPatientAccountRequest(BaseModel):
     phone: str | None = None
 
 @app.post("/functions/lookup-patient-account")
-async def lookup_patient_account(payload: LookupPatientAccountRequest):
+async def lookup_patient_account(payload: dict):
+    args = _unwrap(payload)
+    payload = LookupPatientAccountRequest(**{k: args.get(k) for k in [
+        "last_name","dob","zip","patient_id","account_id","statement_id","phone"
+    ]})
     # Error path: not found
     if (payload.last_name or "").lower() in {"unknown", "notfound"}:
         return {"account_id": None, "error": "not_found"}
@@ -141,8 +156,10 @@ class GetStatementDetailsRequest(BaseModel):
     statement_id: str
 
 @app.post("/functions/get-statement-details")
-async def get_statement_details_post(payload: GetStatementDetailsRequest):
-    return await get_statement_details(payload.statement_id)
+async def get_statement_details_post(payload: dict):
+    args = _unwrap(payload)
+    sid = args.get("statement_id")
+    return await get_statement_details(sid)
 
 
 @app.get("/functions/get-payment-options")
@@ -162,8 +179,10 @@ class GetPaymentOptionsRequest(BaseModel):
     account_id: str
 
 @app.post("/functions/get-payment-options")
-async def get_payment_options_post(payload: GetPaymentOptionsRequest):
-    return await get_payment_options(payload.account_id)
+async def get_payment_options_post(payload: dict):
+    args = _unwrap(payload)
+    aid = args.get("account_id")
+    return await get_payment_options(aid)
 
 
 class OpenPaymentPortalRequest(BaseModel):
@@ -171,8 +190,11 @@ class OpenPaymentPortalRequest(BaseModel):
     amount: float
 
 @app.post("/functions/open-secure-payment-portal")
-async def open_secure_payment_portal(payload: OpenPaymentPortalRequest):
-    if payload.amount <= 0:
+async def open_secure_payment_portal(payload: dict):
+    args = _unwrap(payload)
+    account_id = args.get("account_id")
+    amount = float(args.get("amount", 0) or 0)
+    if amount <= 0:
         return {"error": "invalid_amount"}
     token_suffix = secrets.token_hex(8)
     return {
@@ -188,8 +210,10 @@ class CreatePaymentRequest(BaseModel):
     last4: str
 
 @app.post("/functions/create-payment")
-async def create_payment(payload: CreatePaymentRequest):
-    if not payload.token.startswith("tok_"):
+async def create_payment(payload: dict):
+    args = _unwrap(payload)
+    token = str(args.get("token", ""))
+    if not token.startswith("tok_"):
         return {"error": "invalid_token"}
     receipt_id = f"RCT-{secrets.token_hex(4).upper()}"
     return {"receipt_id": receipt_id, "timestamp": "2025-08-15T12:00:00Z"}
@@ -203,14 +227,18 @@ class CreatePaymentPlanRequest(BaseModel):
     start_date: str
 
 @app.post("/functions/create-payment-plan")
-async def create_payment_plan(payload: CreatePaymentPlanRequest):
-    if payload.installments < 2:
+async def create_payment_plan(payload: dict):
+    args = _unwrap(payload)
+    installments = int(args.get("installments", 0) or 0)
+    amount = float(args.get("amount", 0) or 0)
+    start_date = str(args.get("start_date", "") or "")
+    if installments < 2:
         return {"error": "installments_too_low"}
     plan_id = f"PLAN-{secrets.token_hex(3).upper()}"
     # Simplified schedule
     schedule = [
-        {"due_date": payload.start_date, "amount": round(payload.amount / payload.installments, 2)}
-        for _ in range(payload.installments)
+        {"due_date": start_date, "amount": round(amount / installments, 2)}
+        for _ in range(installments)
     ]
     return {"plan_id": plan_id, "schedule": schedule}
 
@@ -221,10 +249,14 @@ class SendSMSRequest(BaseModel):
     link: str | None = None
 
 @app.post("/functions/send-sms")
-async def send_sms(payload: SendSMSRequest):
-    if not (payload.text or payload.link):
+async def send_sms(payload: dict):
+    args = _unwrap(payload)
+    phone = str(args.get("phone", "") or "")
+    text = args.get("text")
+    link = args.get("link")
+    if not (text or link):
         return {"status": "failed", "error": "missing_content"}
-    if payload.phone.endswith("0000"):
+    if phone.endswith("0000"):
         return {"status": "failed", "error": "carrier_reject"}
     return {"status": "sent"}
 
@@ -236,10 +268,15 @@ class SendEmailRequest(BaseModel):
     link: str | None = None
 
 @app.post("/functions/send-email")
-async def send_email(payload: SendEmailRequest):
-    if not (payload.body or payload.link):
+async def send_email(payload: dict):
+    args = _unwrap(payload)
+    email = str(args.get("email", "") or "")
+    subject = str(args.get("subject", "") or "")
+    body = args.get("body")
+    link = args.get("link")
+    if not (body or link):
         return {"status": "failed", "error": "missing_content"}
-    if payload.email.lower().endswith("@invalid.test"):
+    if email.lower().endswith("@invalid.test"):
         return {"status": "failed", "error": "bounce"}
     return {"status": "sent"}
 
@@ -254,10 +291,13 @@ class LookupBenefitsRequest(BaseModel):
     cpt_code: str | None = None
 
 @app.post("/functions/lookup-benefits")
-async def lookup_benefits(payload: LookupBenefitsRequest):
-    if (payload.member_id or "").lower() in {"unknown", "notfound"}:
+async def lookup_benefits(payload: dict):
+    args = _unwrap(payload)
+    member_id = args.get("member_id")
+    provider_npi = args.get("provider_npi")
+    if (member_id or "").lower() in {"unknown", "notfound"}:
         return {"error": "member_not_found"}
-    coverage_active = not ((payload.member_id or "").endswith("X"))
+    coverage_active = not ((member_id or "").endswith("X"))
     result = {
         "coverage_active": coverage_active,
         "plan_name": "Acme PPO 2000",
@@ -267,7 +307,7 @@ async def lookup_benefits(payload: LookupBenefitsRequest):
         "deductible_remaining": 350.0,
         "oop_remaining": 1200.0,
         "visit_limits": {"pt": 20, "ot": 20},
-        "network_status": "in_network" if (payload.provider_npi or "").endswith("7") else "unknown",
+        "network_status": "in_network" if (provider_npi or "").endswith("7") else "unknown",
     }
     return result
 
@@ -279,8 +319,10 @@ class CheckPriorAuthRequest(BaseModel):
     provider_npi: str | None = None
 
 @app.post("/functions/check-prior-auth")
-async def check_prior_auth(payload: CheckPriorAuthRequest):
-    required = payload.cpt_code in {"70551", "73721", "72148"}
+async def check_prior_auth(payload: dict):
+    args = _unwrap(payload)
+    cpt_code = str(args.get("cpt_code", "") or "")
+    required = cpt_code in {"70551", "73721", "72148"}
     notes = "MRI/CT often require prior auth" if required else "Not typically required"
     return {"required": required, "notes": notes}
 
@@ -292,8 +334,10 @@ class EstimatePatientResponsibilityRequest(BaseModel):
     in_network: bool
 
 @app.post("/functions/estimate-patient-responsibility")
-async def estimate_patient_responsibility(payload: EstimatePatientResponsibilityRequest):
-    base = 500.0 if payload.in_network else 900.0
+async def estimate_patient_responsibility(payload: dict):
+    args = _unwrap(payload)
+    in_network = bool(args.get("in_network", True))
+    base = 500.0 if in_network else 900.0
     estimate = base * 0.3
     return {"estimate": round(estimate, 2), "assumptions": "In-network unless noted; excludes facility fees"}
 
@@ -304,7 +348,7 @@ class CreateTicketRequest(BaseModel):
     details: dict
 
 @app.post("/functions/create-ticket")
-async def create_ticket(payload: CreateTicketRequest):
+async def create_ticket(payload: dict):
     # Ticket number is spoken as "123 — 456"; store with dash
     return {"ticket_number": "123-456"}
 
@@ -314,5 +358,5 @@ class TransferCallRequest(BaseModel):
     reason: str
 
 @app.post("/functions/transfer-call")
-async def transfer_call(payload: TransferCallRequest):
+async def transfer_call(payload: dict):
     return {"status": "transferred"}
