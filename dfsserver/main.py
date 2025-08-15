@@ -123,6 +123,13 @@ async def get_statement_details(statement_id: str):
         ],
     }
 
+class GetStatementDetailsRequest(BaseModel):
+    statement_id: str
+
+@app.post("/functions/get-statement-details")
+async def get_statement_details_post(payload: GetStatementDetailsRequest):
+    return await get_statement_details(payload.statement_id)
+
 
 @app.get("/functions/get-payment-options")
 async def get_payment_options(account_id: str):
@@ -136,6 +143,13 @@ async def get_payment_options(account_id: str):
             {"installments": 6, "frequency": "biweekly", "down_payment": 25.00},
         ],
     }
+
+class GetPaymentOptionsRequest(BaseModel):
+    account_id: str
+
+@app.post("/functions/get-payment-options")
+async def get_payment_options_post(payload: GetPaymentOptionsRequest):
+    return await get_payment_options(payload.account_id)
 
 
 class OpenPaymentPortalRequest(BaseModel):
