@@ -55,20 +55,32 @@ class VerifyIdentityResponse(BaseModel):
     status: str
 
 @app.post("/functions/verify-identity")
-async def verify_identity(payload: VerifyIdentityRequest) -> VerifyIdentityResponse:
-    # Mock: accept when last_name and dob present and not marked mismatch
-    last_name = str(payload.factors.get("last_name", "")).strip().lower()
-    dob = str(payload.factors.get("dob", "")).strip()
-    zip_code = str(payload.factors.get("zip", "")).strip()
-    account_id = str(payload.factors.get("account_id", "")).strip()
-    statement_id = str(payload.factors.get("statement_id", "")).strip()
+async def verify_identity(payload: dict) -> VerifyIdentityResponse:
+    # Be tolerant to different wrappers used by various tool runners
+    args = payload.get("args") or payload.get("body") or payload
+    method = args.get("method") if isinstance(args, dict) else None
+    factors = args.get("factors") if isinstance(args, dict) else None
+    if isinstance(factors, str):
+        try:
+            import json as _json
+            factors = _json.loads(factors)
+        except Exception:
+            factors = {}
+    if not isinstance(factors, dict):
+        factors = {}
+
+    last_name = str(factors.get("last_name", "")).strip().lower()
+    dob = str(factors.get("dob", "")).strip()
+    zip_code = str(factors.get("zip", "")).strip()
+    account_id = str(factors.get("account_id", "")).strip()
+    statement_id = str(factors.get("statement_id", "")).strip()
 
     if last_name in {"mismatch", "wrong"}:
         return VerifyIdentityResponse(status="failed")
     if not last_name or not dob:
         return VerifyIdentityResponse(status="failed")
     # Accept multiple verification methods used in demos
-    if payload.method not in {"hipaa_minimum", "proxy_auth", "knowledge", "statement_id", "member_id"}:
+    if method not in {"hipaa_minimum", "proxy_auth", "knowledge", "statement_id", "member_id"}:
         return VerifyIdentityResponse(status="failed")
     # One more factor required for success
     if not (zip_code or account_id or statement_id):
