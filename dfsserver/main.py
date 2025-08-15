@@ -67,7 +67,8 @@ async def verify_identity(payload: VerifyIdentityRequest) -> VerifyIdentityRespo
         return VerifyIdentityResponse(status="failed")
     if not last_name or not dob:
         return VerifyIdentityResponse(status="failed")
-    if payload.method not in {"hipaa_minimum", "proxy_auth"}:
+    # Accept multiple verification methods used in demos
+    if payload.method not in {"hipaa_minimum", "proxy_auth", "knowledge", "statement_id", "member_id"}:
         return VerifyIdentityResponse(status="failed")
     # One more factor required for success
     if not (zip_code or account_id or statement_id):
